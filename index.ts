@@ -1,19 +1,21 @@
 
 import puppeteer from "puppeteer"
 import { createObjectCsvWriter } from 'csv-writer'
+import { setInterval } from "timers/promises";
 
-process.setMaxListeners(5);
+process.setMaxListeners(10);
 
 async function sleep(delaySec: number) {
   return new Promise(resolve => setTimeout(resolve, delaySec * 1000));
 }
 
 // 検索したいキーワードを検索したいキーワードを入力
-const query = "CBDリキッド"
+const query = "篠山　宿泊"
 
 const main = async () => {
+    console.log('scriping start.')
 
- const browser = await puppeteer.launch();
+    const browser = await puppeteer.launch();
 
     // 検索結果の１ページ目に表示されるサイトののリンク取得するための関数
     const getLinks = async (query: string, pageIndex: number = 0) => {
@@ -22,37 +24,49 @@ const main = async () => {
         const links =
             await page.evaluate(() => {
                 const linkElem = Array.from(document.querySelectorAll('.MjjYud'))
-                return linkElem.map((elem) => ({ url: elem.querySelector("a").href}))
+                return linkElem.map((elem) => ({ url: elem.querySelector("a")?.href ?? "" }))
             })
         await page.close();
+        console.log('links completed.')
         return links;
     };
   // 各URLのタイトルを取得するための関数
-    const getTitle = async (url: string) => {
+    const getTitle = async (url: string ) => {
         await sleep(0.2)
         const page = await browser.newPage();
-        await page.goto(url, {timeout: 100000, waitUntil: "domcontentloaded"});
-        const title = await page.title();
-        await page.close();
-        return title;
+        try {
+            await page.goto(url, {timeout: 100000, waitUntil: "domcontentloaded"});
+            const title = await page.title();
+            await page.close();
+            return title;
+        } catch (e) {
+            await page.close();
+            return "";
+        }
     };
     // 各URLのデスクリプションを取得するための関数
     const getDescription = async (url: string) => {
         await sleep(0.2)
         const browser = await puppeteer.launch();
         const page = await browser.newPage();
-        await page.goto(url, {timeout: 100000, waitUntil: "domcontentloaded"});
-        const description = await page.evaluate(() => {
-            const descriptionElement = document.querySelector('head meta[name="description"]');
-            return descriptionElement ? descriptionElement.getAttribute('content') : null;
-        });
-        await browser.close();
-        return description
+        try {
+            await page.goto(url, {timeout: 100000, waitUntil: "domcontentloaded"});
+            const description = await page.evaluate(() => {
+                const descriptionElement = document.querySelector('head meta[name="description"]');
+                return descriptionElement ? descriptionElement.getAttribute('content') : null;
+            });
+            await browser.close();
+            return description
+        } catch (e) {
+            await browser.close();
+            await page.close();
+            return "";
+        }
     };
 
     const links = await getLinks(query)
-    const titles = await Promise.all(links.map((link) => getTitle(link.url)));
-    const descriptions = await Promise.all(links.map((link) => getDescription(link.url)))
+    const titles = await Promise.all(links.map((link) => getTitle(link.url ?? "")));
+    const descriptions = await Promise.all(links.map((link) => getDescription(link.url ?? "")));
 
     // linksとtitle,descの配列の長さは同一
     const data = links.map((_, index) => {
