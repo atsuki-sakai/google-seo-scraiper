@@ -3,14 +3,11 @@ import puppeteer from "puppeteer"
 import { createObjectCsvWriter } from 'csv-writer'
 import { setInterval } from "timers/promises";
 
-process.setMaxListeners(10);
+process.setMaxListeners(30);
 
 async function sleep(delaySec: number) {
   return new Promise(resolve => setTimeout(resolve, delaySec * 1000));
 }
-
-// 検索したいキーワードを検索したいキーワードを入力
-const query = "篠山　宿泊"
 
 const main = async () => {
     console.log('scriping start.')
@@ -18,19 +15,19 @@ const main = async () => {
     const browser = await puppeteer.launch();
 
     // 検索結果の１ページ目に表示されるサイトののリンク取得するための関数
-    const getLinks = async (query: string, pageIndex: number = 0) => {
+    const getChromeLinks = async (url: string): Promise<any> => {
         const page = await browser.newPage();
-        await page.goto(`https://www.google.com/search?q=${query}&rlz=1C5CHFA_enJP970JP970&sxsrf=APwXEdcCTmGY-z5Rxu05AK7GZSkcmxKcIw:1681175186008&ei=krI0ZMETw7Laug_QnojoBw&start=${pageIndex}&sa=N&ved=2ahUKEwjBpJHO0aD-AhVDmVYBHVAPAn04FBDy0wN6BAgdEAQ&biw=1920&bih=969&dpr=1`, { timeout: 20000, waitUntil: "domcontentloaded" });
-        const links =
-            await page.evaluate(() => {
+            await page.goto(url);
+            const links =  await page.evaluate(() => {
                 const linkElem = Array.from(document.querySelectorAll('.MjjYud'))
                 return linkElem.map((elem) => ({ url: elem.querySelector("a")?.href ?? "" }))
             })
-        await page.close();
         console.log('links completed.')
+        await page.close();
         return links;
     };
-  // 各URLのタイトルを取得するための関数
+
+    // 各URLのタイトルを取得するための関数
     const getTitle = async (url: string ) => {
         await sleep(0.2)
         const page = await browser.newPage();
@@ -64,12 +61,29 @@ const main = async () => {
         }
     };
 
-    const links = await getLinks(query)
-    const titles = await Promise.all(links.map((link) => getTitle(link.url ?? "")));
-    const descriptions = await Promise.all(links.map((link) => getDescription(link.url ?? "")));
+    const makeQuery = (query: string, pageIndex: number): { url: string }[] => {
+        let result: {url: string}[] = []
+        for (let index = 0; index < pageIndex; index++) {
+            result.push({ url: `https://www.google.com/search?q=${query}&rlz=1C5CHFA_enJP970JP970&sxsrf=APwXEdcCTmGY-z5Rxu05AK7GZSkcmxKcIw:1681175186008&ei=krI0ZMETw7Laug_QnojoBw&start=${index === 0 ? 0 : `${index}0`}&sa=N&ved=2ahUKEwjBpJHO0aD-AhVDmVYBHVAPAn04FBDy0wN6BAgdEAQ&biw=1920&bih=969&dpr=1` });
+        }
+        return result
+    }
 
-    // linksとtitle,descの配列の長さは同一
-    const data = links.map((_, index) => {
+
+    //###############################//
+    // 検索したいキーワードとページ数を入力("keyword, fetchLength")//
+    const urls = makeQuery("篠山　黒枝豆", 3)//
+    //###############################//
+
+    const links = await Promise.all(urls.map((url: { url: string }) => getChromeLinks(url.url)))
+    let result: {url: string}[] = []
+    links.map((urlList: {url:string}[]) => {
+        result = [...result, ...urlList]
+    })
+    const titles = await Promise.all(result.map((link) => getTitle(link.url ?? "")));
+    const descriptions = await Promise.all(result.map((link: { url: string }) => getDescription(link.url ?? "")));
+    //linksとtitle,descの配列の長さは同一
+    const data = result.map((_: any, index: number) => {
         return {
             title: titles[index],
             desc: descriptions[index]
